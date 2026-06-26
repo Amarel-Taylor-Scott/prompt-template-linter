@@ -33,6 +33,13 @@ UNSAFE_PATTERNS = [
     "confidential",
 ]
 
+# Precompiled word-boundary regexes, one per phrase. Matching on word
+# boundaries (rather than plain substring containment) avoids false-positive
+# warnings such as flagging "leak" inside "bleak" or "confidential" inside
+# "confidentially". Kept in lockstep with ``UNSAFE_PATTERNS`` so each hit can be
+# reported with the human-readable phrase that triggered it.
+UNSAFE_RES = [re.compile(r"\b" + re.escape(p) + r"\b") for p in UNSAFE_PATTERNS]
+
 
 @dataclass
 class LintReport:
@@ -70,8 +77,8 @@ def lint_template(template: str) -> LintReport:
     warnings: list[str] = []
     lowered = template.lower()
     unsafe_hits = 0
-    for pattern in UNSAFE_PATTERNS:
-        if pattern in lowered:
+    for pattern, regex in zip(UNSAFE_PATTERNS, UNSAFE_RES):
+        if regex.search(lowered):
             unsafe_hits += 1
             warnings.append(f"Flagged unsafe keyword/phrase: {pattern!r}")
 
@@ -116,6 +123,10 @@ def main(argv: list[str] | None = None) -> int:
         for warning in report.warnings:
             print(f"  - {warning}")
 
+    # Note: any warning — including the benign "No placeholders found" case —
+    # makes the process exit non-zero. A static prompt with no placeholders is
+    # therefore treated as a lint failure by design; callers that want to allow
+    # placeholder-free templates must check the report themselves.
     return 1 if report.warnings else 0
 
 
